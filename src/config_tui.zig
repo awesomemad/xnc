@@ -287,6 +287,21 @@ fn fieldDescription(name: []const u8) []const u8 {
     return descs.get(name) orelse "No description";
 }
 
+fn setStdinRaw(raw: bool) void {
+    const os_tag = @import("builtin").os.tag;
+    if (os_tag == .windows) {
+        const handle = std.os.windows.GetStdHandle(std.os.windows.STD_INPUT_HANDLE) catch return;
+        var mode: std.os.windows.DWORD = undefined;
+        if (std.os.windows.kernel32.GetConsoleMode(handle, &mode) == 0) return;
+        if (raw) {
+            mode &= ~(@as(u32, 0x0004 | 0x0002));
+        } else {
+            mode |= @as(u32, 0x0004 | 0x0002);
+        }
+        _ = std.os.windows.kernel32.SetConsoleMode(handle, mode);
+    }
+}
+
 fn readKey(reader: std.io.AnyReader) !u16 {
     var buf: [1]u8 = undefined;
     const n = reader.read(&buf) catch return 0;
@@ -315,6 +330,9 @@ fn readKey(reader: std.io.AnyReader) !u16 {
 pub fn runConfigTui(cfg: *Config, path: []const u8) !void {
     const stdout = std.io.getStdOut().writer();
     const stdin = std.io.getStdIn().reader().any();
+
+    setStdinRaw(true);
+    defer setStdinRaw(false);
 
     var cat_idx: usize = 0;
     var opt_idx: usize = 0;
