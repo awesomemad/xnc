@@ -287,18 +287,27 @@ fn fieldDescription(name: []const u8) []const u8 {
     return descs.get(name) orelse "No description";
 }
 
+var saved_console_mode: u32 = 0;
+var console_mode_saved = false;
+
 fn setStdinRaw(raw: bool) void {
     const os_tag = @import("builtin").os.tag;
     if (os_tag == .windows) {
         const handle = std.os.windows.GetStdHandle(std.os.windows.STD_INPUT_HANDLE) catch return;
-        var mode: std.os.windows.DWORD = undefined;
-        if (std.os.windows.kernel32.GetConsoleMode(handle, &mode) == 0) return;
         if (raw) {
+            var mode: std.os.windows.DWORD = undefined;
+            if (std.os.windows.kernel32.GetConsoleMode(handle, &mode) == 0) return;
+            saved_console_mode = mode;
+            console_mode_saved = true;
+            mode |= @as(u32, 0x0200);
             mode &= ~(@as(u32, 0x0004 | 0x0002));
+            _ = std.os.windows.kernel32.SetConsoleMode(handle, mode);
         } else {
-            mode |= @as(u32, 0x0004 | 0x0002);
+            if (console_mode_saved) {
+                _ = std.os.windows.kernel32.SetConsoleMode(handle, saved_console_mode);
+                console_mode_saved = false;
+            }
         }
-        _ = std.os.windows.kernel32.SetConsoleMode(handle, mode);
     }
 }
 
@@ -310,19 +319,19 @@ fn readKey(reader: std.io.AnyReader) !u16 {
     if (c == 0x1b) {
         var seq: [4]u8 = undefined;
         if ((reader.read(seq[0..1]) catch return 0x1b) == 0) return 0x1b;
-        if (seq[0] == '[') {
-            if ((reader.read(seq[1..2]) catch return 0x1b) == 0) return 0x1b;
-            switch (seq[1]) {
-                'A' => return 0x101, 'B' => return 0x102, 'C' => return 0x103, 'D' => return 0x104,
-                'H' => return 0x105, 'F' => return 0x106,
-                else => {},
+            if (seq[0] == '[' or seq[0] == 'O') {
+                if ((reader.read(seq[1..2]) catch return 0x1b) == 0) return 0x1b;
+                switch (seq[1]) {
+                    'A' => return 0x101, 'B' => return 0x102, 'C' => return 0x103, 'D' => return 0x104,
+                    'H' => return 0x105, 'F' => return 0x106,
+                    else => {},
+                }
+                if (seq[0] == '[' and seq[1] == '5' and (reader.read(seq[2..3]) catch return 0x1b) > 0 and seq[2] == '~') return 0x107;
+                if (seq[0] == '[' and seq[1] == '6' and (reader.read(seq[2..3]) catch return 0x1b) > 0 and seq[2] == '~') return 0x108;
+                return 0x1b;
             }
-            if (seq[1] == '5' and (reader.read(seq[2..3]) catch return 0x1b) > 0 and seq[2] == '~') return 0x107;
-            if (seq[1] == '6' and (reader.read(seq[2..3]) catch return 0x1b) > 0 and seq[2] == '~') return 0x108;
+            _ = reader.read(seq[1..2]) catch return 0x1b;
             return 0x1b;
-        }
-        _ = reader.read(seq[1..2]) catch return 0x1b;
-        return 0x1b;
     }
     return c;
 }
