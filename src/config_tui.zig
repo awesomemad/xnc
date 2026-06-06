@@ -382,10 +382,14 @@ pub fn runConfigTui(cfg: *Config, path: []const u8) !void {
         if (opt_idx >= max_rows) scroll = opt_idx - max_rows + 1;
 
         var row: usize = 0;
+        var showed_more = false;
         for (fields, 0..) |fname, fi| {
             if (fi < scroll) continue;
             if (row >= max_rows) {
-                try stdout.print(CSI ++ "37m  ... {d} more" ++ CSI ++ "K\n", .{fields.len - fi});
+                if (!showed_more) {
+                    try stdout.print(CSI ++ "37m  ... {d} more" ++ CSI ++ "K\n", .{fields.len - fi});
+                    showed_more = true;
+                }
                 row += 1;
                 continue;
             }
@@ -426,7 +430,8 @@ pub fn runConfigTui(cfg: *Config, path: []const u8) !void {
             try stdout.writeAll(CSI ++ "K\n");
         }
 
-        for (row..max_rows) |_| {
+        var ri: usize = row;
+        while (ri < max_rows) : (ri += 1) {
             try stdout.writeAll(CSI ++ "K\n");
         }
 
